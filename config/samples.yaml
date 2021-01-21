@@ -1,0 +1,10 @@
+#samples.yaml for realign_bam_paired.snakefile
+#Anna Hoge
+#Template made October 18th, 2019
+#Ha Lab
+#Fred Hutchinson Cancer Research Center
+#modified by Eden Cruikshank
+
+samples: # sample name will be used for output files and does not need to match the bam file name
+  sample_name_2: /fh/scratch/delete90/ha_g/realigned_bams/cfDNA_MBC_ULP_hg38/realign_bam_paired_snakemake-master/results/MBC_349.ctDNA_ULP/MBC_349.ctDNA_ULP_recalibrated.bam
+  

@@ -1,0 +1,162 @@
+#downsampling_bam_paired.snakefile
+#Anna Hoge
+#Template made October 18th, 2019
+#Ha Lab
+#Fred Hutchinson Cancer Research Center
+#modified by Eden Cruikshank & Anna-Lisa Doebley 20210112
+
+"""
+#before running snakemake, do in tmux terminal:
+ml snakemake/5.19.2-foss-2019b-Python-3.7.4
+ml BWA/0.7.17-foss-2018b
+ml SAMtools/1.10-GCCcore-8.3.0
+# ml java/jdk1.8.0_31 #not available on bionic
+ml GATK/4.1.4.1-GCCcore-8.3.0-Java-11
+ml picard/2.18.29-Java
+ml R/4.0.3-foss-2020b ## picard CollectInsertSizeMetrics needs R 
+
+#command to run snakemake (remove -np at end when done validating):
+snakemake -s downsampling_bam_paired_final.snakefile --latency-wait 60 --keep-going --cluster-config config/cluster_slurm.yaml --cluster "sbatch -p {cluster.partition} --mem={cluster.mem} -t {cluster.time} -c {cluster.ncpus} -n {cluster.ntasks} -o {cluster.output} -J {cluster.JobName}" -j 40 -np
+"""
+
+configfile: "config/samples.yaml"
+configfile: "config/config.yaml"
+
+rule all:
+	input:
+		expand("results/{samples}/{samples}_removed_dup_metrics.txt", samples=config["samples"]),
+		expand("results/{samples}/{samples}_downsampled.bam", samples=config["samples"]),
+		expand("results/{samples}/{samples}_downsampled.bam.bai", samples=config["samples"]),
+		expand("results/{samples}/{samples}_alignment_summary_metrics.txt", samples=config["samples"]),
+		expand("results/{samples}/{samples}_wgs_metrics.txt", samples=config["samples"]),
+		expand("results/{samples}/{samples}_isize.txt", samples=config["samples"]),
+		expand("results/{samples}/{samples}_isize.pdf", samples=config["samples"])
+
+rule mark_dups:
+	input:
+		bam_file = lambda wildcards: config["samples"][wildcards.samples]
+	output:
+		bam=temp("results/{samples}/{samples}_dups_removed.bam"),
+		metrics=protected("results/{samples}/{samples}_removed_dup_metrics.txt")
+	params:
+		java=config["java"],
+		picard_jar = config["picard_jar"]
+	log:
+		"logs/mark_dups/{samples}_mark_dups.txt"
+	shell:
+		"({params.java} -XX:GCTimeLimit=50 -XX:GCHeapFreeLimit=10 -Xmx72G \
+		-jar {params.picard_jar} MarkDuplicates \
+		I={input} \
+		O={output.bam} \
+		M={output.metrics} \
+		REMOVE_DUPLICATES=true \
+		TMP_DIR=results/tmps/{wildcards.samples}_tmp) 2> {log}"
+		
+
+rule get_temp_alignment_metrics:
+	input:
+		"results/{samples}/{samples}_dups_removed.bam"
+	output:
+		metrics="results/{samples}/{samples}_temp_alignment_summary_metrics.txt" #AL modified
+	params:
+		reference_genome=config["reference_genome"],
+		java=config["java"],
+		picard_jar=config["picard_jar"]
+	log:
+		"logs/aligment_metrics/{samples}_get_alignment_metrics.txt"
+	shell:
+		"({params.java} -jar {params.picard_jar} CollectAlignmentSummaryMetrics \
+		R={params.reference_genome} \
+		I={input} \
+		O={output}) 2> {log}"
+
+rule downsampling:
+	input: 
+		bam_file="results/{samples}/{samples}_dups_removed.bam",
+		metrics="results/{samples}/{samples}_temp_alignment_summary_metrics.txt" #AL modified
+	output: 
+		bam=protected("results/{samples}/{samples}_downsampled.bam"),
+		index="results/{samples}/{samples}_downsampled.bai"
+	params: 
+		java=config["java"],
+		picard_jar=config["picard_jar"],
+		desired_reads=config['desired_reads'] #AL modified
+	log: 
+		"logs/probability/{samples}_downsample.txt"
+	shell: #AL modified
+		"READS=$(grep FIRST_OF_PAIR {input.metrics} | cut -f2);" #get the second value on the line that contains 'first of pair'
+		"PROB=$(echo {params.desired_reads}/$READS | bc -l);" #calculate the probability
+		"({params.java} -jar {params.picard_jar} DownsampleSam \
+		I={input.bam_file} \
+		O={output.bam} \
+		CREATE_INDEX=true \
+		STRATEGY=Chained \
+		P=$PROB \
+       	ACCURACY=0.001) 2> {log}"
+
+rule rename_index_files:
+	input:
+		"results/{samples}/{samples}_downsampled.bai"
+	output:
+		protected("results/{samples}/{samples}_downsampled.bam.bai")
+	log: 
+		"logs/rename_index_files/{samples}_rename_index_files.txt"
+	shell:
+		"(mv {input} {output}) 2> {log}"
+
+rule get_alignment_metrics:
+	input:
+		"results/{samples}/{samples}_downsampled.bam"
+	output:
+		protected("results/{samples}/{samples}_alignment_summary_metrics.txt")
+	params:
+		reference_genome=config["reference_genome"],
+		java=config["java"],
+		picard_jar=config["picard_jar"]
+	log:
+		"logs/aligment_metrics/{samples}_get_alignment_metrics.txt"
+	shell:
+		"({params.java} -jar {params.picard_jar} CollectAlignmentSummaryMetrics \
+		R={params.reference_genome} \
+		I={input} \
+		O={output}) 2> {log}"
+
+rule get_wgs_metrics:
+	input:
+		"results/{samples}/{samples}_downsampled.bam"
+	output:
+		protected("results/{samples}/{samples}_wgs_metrics.txt")
+	params:
+		reference_genome=config["reference_genome"],
+		is_wgs=config["is_wgs"],
+		java=config["java"],
+		picard_jar=config["picard_jar"]
+	log:
+		"logs/wgs_metrics/{samples}_get_wgs_metrics.txt"
+	run:
+		if params.is_wgs:
+			shell("({params.java} -jar {params.picard_jar} CollectWgsMetrics \
+			I={input} \
+			O={output} \
+			R={params.reference_genome} \
+			COUNT_UNPAIRED=true \
+			USE_FAST_ALGORITHM=true \
+			INCLUDE_BQ_HISTOGRAM=true) 2> {log}")
+ 
+rule get_isize:
+	input:
+		"results/{samples}/{samples}_downsampled.bam"
+	output:
+		isize_txt = protected("results/{samples}/{samples}_isize.txt"),
+		isize_pdf = protected("results/{samples}/{samples}_isize.pdf")
+	params:
+		java=config["java"],
+		picard_jar=config["picard_jar"]
+	shell:
+ 		'time {params.java} -jar {params.picard_jar} CollectInsertSizeMetrics \
+ 		I={input} \
+ 		O={output.isize_txt} \
+ 		H={output.isize_pdf} \
+ 		HISTOGRAM_WIDTH=500 \
+ 		TMP_DIR=results/tmps/{wildcards.samples}_tmp'
+
