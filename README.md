@@ -1,6 +1,6 @@
 # downsampling_bam_paired_snakemake
 
-A snakemake to realign reads from a bam file to a different genome, following GATK best practices. 
+A snakemake to downsample reads from a bam file, following GATK best practices. 
 
 This repository contains all the folders needed to run the snakemake. logs/cluster/ currently contains a placeholder file because GitHub does not allow empty folders, but after copying this repository structure to the server, this placeholder file can be removed from the server.
 
