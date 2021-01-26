@@ -85,7 +85,7 @@ rule downsampling:
 		"logs/probability/{samples}_downsample.txt"
 	shell: #AL modified
 		"READS=$(grep FIRST_OF_PAIR {input.metrics} | cut -f2);" #get the second value on the line that contains 'first of pair'
-		"PROB=$(echo {params.desired_reads}/$READS | bc -l);" #calculate the probability
+		"PROB=$(echo {params.desired_reads}/$READS | bc -l);" #calculate the probability / desired reads based on your specific target (update in config)
 		"({params.java} -jar {params.picard_jar} DownsampleSam \
 		I={input.bam_file} \
 		O={output.bam} \
