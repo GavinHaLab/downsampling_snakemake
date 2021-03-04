@@ -1,9 +1,8 @@
 #downsampling_bam_paired.snakefile
-#Anna Hoge
-#Template made October 18th, 2019
+#Eden Cruikshank & Anna-Lisa Doebley
+#January 12th, 2021
 #Ha Lab
 #Fred Hutchinson Cancer Research Center
-#modified by Eden Cruikshank & Anna-Lisa Doebley 20210112
 
 """
 #before running snakemake, do in tmux terminal:
